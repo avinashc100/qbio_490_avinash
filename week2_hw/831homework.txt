@@ -1,0 +1,9 @@
+git status
+git add -A, git add
+git commit -m
+git push
+
+
+git pull
+scp /PATH/TO/name_of_file /PATH/TO/PERSONAL/REPO/name_of_file_yourname
+
