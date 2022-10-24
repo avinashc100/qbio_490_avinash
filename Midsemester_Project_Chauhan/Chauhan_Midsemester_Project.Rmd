@@ -1,0 +1,212 @@
+---
+title: "MidSemester Project"
+name: Avinash Chauhan
+date: 10/15/2022
+output: html_notebook
+---
+
+
+
+```{r}
+    knitr::opts_knit$set(root.dir = normalizePath("C:/Users/ac361/Desktop/QBIO_490/qbio_490_avinash/analysis_data"))
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+```{r}
+install.packages("TCGAbiolinks")
+install.packages("maftools")
+install.packages("BiocManager")
+install.packages("survival")
+install.packages("survminer")
+install.packages("ggplot2")
+install.packages("vioplot")
+install.packages("aplpack")
+
+
+
+library("TCGAbiolinks")
+library("maftools")
+library("BiocManager")
+library("survival")
+library("survminer")
+library("ggplot2")
+library("vioplot")
+library("aplpack")
+
+
+```
+
+
+```{r}
+clinical_query <- GDCquery(project = "TCGA-BRCA", data.category = "Clinical", file.type = "xml")
+GDCdownload(clinical_query)
+
+clinical <- GDCprepare_clinic(query = clinical_query, clinical.info = "patient")
+
+maf_query <- GDCquery(
+    project = "TCGA-BRCA", data.category = "Simple Nucleotide Variation", access = "open",
+    data.type = "Masked Somatic Mutation", workflow.type = "Aliquot Ensemble Somatic Variant Merging and Masking"
+)
+
+maf <- GDCprepare(maf_query) # as long as it runs, ignore any errors
+
+colnames(clinical)[ colnames(clinical) == "bcr_patient_barcode" ] <- "Tumor_Sample_Barcode"
+
+
+maf_object <- read.maf(maf = maf, clinicalData = clinical, isTCGA = TRUE)
+```
+
+
+```{r}
+#index categories of interest into columns
+
+
+clinical$PR_category <- ifelse(clinical$breast_carcinoma_progesterone_receptor_status == "Positive", "PR-positive", "PR-negative")
+
+clinical$ER_category <- ifelse(clinical$breast_carcinoma_estrogen_receptor_status == "Positive", "ER-positive", "ER-negative")
+
+clinical$modern_category <- ifelse(clinical$year_of_initial_pathologic_diagnosis > 2010, TRUE, FALSE)
+
+maf_object <- read.maf(maf = maf, clinicalData = clinical, isTCGA = TRUE)
+
+```
+
+
+```{r}
+prcolors = c("#39BEB1","#ACA4E2")
+names(prcolors)=c( "PR-positive", "PR-negative" )
+
+ercolors=c("#39BEB1","#ACA4E2" )
+names(ercolors)=c("ER-positive","ER-negative" )
+
+anno_cols = list(PR_category = prcolors, ER_category = ercolors)
+
+oncoplot(maf = maf_object, top = 10, draw_titv = TRUE, clinicalFeatures = c("PR_category", "ER_category"), annotationColor = anno_cols, sepwd_genes = 1.0, sepwd_samples = 0.5, fill = TRUE, anno_height = 1.5, bgCol = "grey")
+
+```
+
+
+```{r}
+#Compare gene frequency for progesterone receptors
+
+PR_positive_barcodes <- maf_object@clinical.data$Tumor_Sample_Barcode[maf_object@clinical.data$PR_category == "PR-positive"]
+
+PR_positive_maf <- subsetMaf(maf= maf_object, tsb = PR_positive_barcodes)
+
+PR_negative_barcodes <- maf_object@clinical.data$Tumor_Sample_Barcode[maf_object@clinical.data$PR_category == "PR-negative"]
+
+PR_negative_maf <- subsetMaf(maf = maf_object, tsb = PR_negative_barcodes)
+
+
+coOncoplot(m1 = PR_positive_maf, m2 = PR_negative_maf, m1Name = "PR positive", m2Name = "PR negative")
+```
+
+```{r}
+#compare gene frequency for estrogen receptors
+ER_positive_barcodes <- maf_object@clinical.data$Tumor_Sample_Barcode[maf_object@clinical.data$ER_category == "ER-positive"]
+
+ER_positive_maf <- subsetMaf(maf= maf_object, tsb = ER_positive_barcodes)
+
+
+ER_negative_barcodes <- maf_object@clinical.data$Tumor_Sample_Barcode[maf_object@clinical.data$ER_category == "ER-negative"]
+
+ER_negative_maf <- subsetMaf(maf = maf_object, tsb = ER_negative_barcodes)
+
+coOncoplot(m1 = ER_positive_maf, m2 = ER_negative_maf, m1Name = "ER positive", m2Name = "ER negative")
+```
+
+
+```{r}
+#compare rates of PR positive and PR negative populations by PIK3CA expression
+lollipopPlot2(m1 = PR_positive_maf, m2 = PR_negative_maf, m1_name = "PR positive", m2_name = "PR negative", gene = "PIK3CA", domainLabelSize = 0.8)
+```
+```{r}
+lollipopPlot2(m1 = ER_positive_maf, m2 = ER_negative_maf, m1_name = "ER positive", m2_name = "ER negative", gene = "PIK3CA", domainLabelSize = 0.8)
+
+```
+
+
+```{r}
+lollipopPlot2(m1 = PR_positive_maf, m2 = ER_PR_negative_maf, m1_name = "PR positive", m2_name = "PR negative", gene = "TP53")
+
+```
+
+```{r}
+lollipopPlot2(m1 = ER_positive_maf, m2 = ER_negative_maf, m1_name = "ER positive", m2_name = "ER negative", gene = "TP53")
+
+```
+
+
+```{r}
+lollipopPlot2(m1 = PR_positive_maf, m2 = PR_negative_maf, m1_name = "PR positive", m2_name = "PR negative", gene = "CDH1")
+
+```
+```{r}
+lollipopPlot2(m1 = ER_positive_maf, m2 = ER_negative_maf, m1_name = "ER positive", m2_name = "ER negative", gene = "CDH1")
+
+```
+
+
+```{r}
+clinical$survivaltime = ifelse(is.na(clinical$days_to_death), clinical$days_to_last_followup, clinical$days_to_death)
+clinical$deathstatus = ifelse(clinical$vital_status == "Dead", TRUE, FALSE)
+survival_object <- Surv(time = clinical$survivaltime, event = clinical$deathstatus)
+
+PR_sort <- surv_fit(survival_object ~ clinical$PR_category, data = clinical)
+
+ggsurvplot(PR_sort, data = clinical,surv.median.line = "hv", legend.title = "PR Category", legend.labs = c("PR-positive", "PR-negative"), pval = TRUE, conf.int = TRUE, risk.table = TRUE, tables.height = 0.2, tables.theme = clean_theme(), ggtheme = theme_gray()
+)
+
+```
+```{r}
+ER_sort <- surv_fit(survival_object ~ clinical$ER_category, data = clinical)
+
+ggsurvplot(ER_sort, data = clinical,surv.median.line = "hv", legend.title = "ER Category", legend.labs = c("ER-positive", "ER-negative"), pval = TRUE, conf.int = TRUE, risk.table = TRUE, tables.height = 0.2, tables.theme = clean_theme(), ggtheme = theme_gray()
+)
+```
+
+```{r}
+x1 <- as.numeric(clinical$fluorescence_in_situ_hybridization_diagnostic_procedure_chromosome_17_signal_result_range)[clinical$breast_carcinoma_estrogen_receptor_status == "Positive"]
+x2 <- as.numeric(clinical$fluorescence_in_situ_hybridization_diagnostic_procedure_chromosome_17_signal_result_range)[clinical$breast_carcinoma_estrogen_receptor_status == "Negative"]
+x1 <- na.omit(x1)
+x2 <- na.omit(x2)
+
+vioplot(x1, x2, names=c("ER-positive", "ER-negative"), col = "grey", xlab = "Presence of Estrogen Receptor", ylab = "FISH Chr17 Signal Result Range")
+
+```
+
+
+```{r}
+x3 <- as.numeric(clinical$fluorescence_in_situ_hybridization_diagnostic_procedure_chromosome_17_signal_result_range)[clinical$breast_carcinoma_progesterone_receptor_status == "Positive"]
+x4 <- as.numeric(clinical$fluorescence_in_situ_hybridization_diagnostic_procedure_chromosome_17_signal_result_range)[clinical$breast_carcinoma_progesterone_receptor_status == "Negative"]
+x3 <- na.omit(x3)
+x4 <- na.omit(x4)
+
+
+vioplot(x3, x4, names=c("PR-positive", "PR-negative"), col = "grey", xlab = "Presence of Progesterone Receptor", ylab = "FISH Chr17 Signal Result Range")
+```
+
+
+
+```{r}
+x5 <- clinical$survival_time[clinical$breast_carcinoma_estrogen_receptor_status == "Positive"]
+x6 <- clinical$survival_time[clinical$breast_carcinoma_estrogen_receptor_status == "Negative"]
+boxplot(x5, x6, names=c("ER-positive", "ER-negative"), col = "grey", xlab = "Presence of Estrogen Receptor", ylab = "Survival (Days)")
+
+```
+
+```{r}
+x7 <- clinical$survival_time[clinical$breast_carcinoma_progesterone_receptor_status == "Positive"]
+x8 <- clinical$survival_time[clinical$breast_carcinoma_progesterone_receptor_status == "Negative"]
+boxplot(x7, x8, names=c("PR-positive", "PR-negative"), col = "grey", xlab = "Presence of Progesterone Receptor", ylab = "Survival (Days)")
+```
+```{r}
+receptorvalues <- table(clinical$PR_category,clinical$ER_category)
+
+p <-prop.table(receptorvalues, margin =1)
+ggplot(as.data.frame(p), aes(x = Var2, y = Freq, fill = Var1))  +  geom_bar(stat="identity", position = "dodge", alpha = 3/4) + labs(x = 'Progesterone Receptor', y = 'Frequency', fill = 'Estrogen Receptor') + theme_bw()
+
+```
+
+
